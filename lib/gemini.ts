@@ -18,13 +18,16 @@ function getModel() {
 }
 
 /**
- * Interface for code analysis result
+ * Interface for code analysis result with mandatory safety check
  */
 export interface CodeAnalysisResult {
-  bug_description: string;
-  bug_location: string;
-  suggested_fix: string;
-  explanation: string;
+  is_safe: boolean;
+  safety_issues?: string[];
+  has_bugs: boolean;
+  bug_description?: string;
+  bug_location?: string;
+  suggested_fix?: string;
+  explanation?: string;
   test_case?: string;
 }
 
@@ -38,10 +41,13 @@ export interface FixSuggestionResult {
 }
 
 /**
- * Analyze buggy code and identify issues
- * @param code - The buggy code to analyze
+ * Analyze code for safety and bugs (SECURITY-FIRST approach)
+ * This function MUST be called before executing any user-submitted code.
+ *
+ * @param code - The code to analyze
  * @param language - Programming language (e.g., 'python', 'javascript')
- * @returns Analysis result with bug details and suggestions
+ * @returns Analysis result with safety validation and bug details
+ * @throws Error if LLM call fails or response is invalid
  */
 export async function analyzeCode(
   code: string,
@@ -50,21 +56,39 @@ export async function analyzeCode(
   try {
     const model = getModel();
 
-    const prompt = `You are a code debugging assistant. Analyze the following ${language} code and identify bugs.
+    const prompt = `You are a security-aware code debugging assistant. Your PRIMARY job is to validate code safety BEFORE analyzing bugs.
 
-CODE:
+CODE TO ANALYZE:
 \`\`\`${language}
 ${code}
 \`\`\`
 
+CRITICAL SECURITY CHECK (Step 1):
+Check if this code is SAFE to execute in a sandboxed environment. Look for:
+- File system access (open, read, write, delete files)
+- Network requests (HTTP, sockets, external connections)
+- Process execution (subprocess, child_process, system calls)
+- Dangerous functions (eval, exec, compile, __import__)
+- Obfuscation attempts (base64, hex encoding, string concatenation to hide imports)
+- Resource exhaustion (infinite loops, memory bombs)
+- Any other malicious patterns
+
+BUG ANALYSIS (Step 2 - only if code is safe):
+If the code is safe, analyze it for bugs and logic errors.
+
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
-  "bug_description": "Clear description of the bug",
-  "bug_location": "Line number or function where bug exists",
-  "suggested_fix": "Specific fix recommendation",
-  "explanation": "Why this is a bug and how the fix works",
-  "test_case": "A simple test case to verify the fix (optional)"
-}`;
+  "is_safe": true/false,
+  "safety_issues": ["issue1", "issue2"] (if unsafe, list all issues found),
+  "has_bugs": true/false,
+  "bug_description": "Clear description of the bug" (if has_bugs=true),
+  "bug_location": "Line number or function where bug exists" (if has_bugs=true),
+  "suggested_fix": "Specific fix recommendation" (if has_bugs=true),
+  "explanation": "Why this is a bug and how the fix works" (if has_bugs=true),
+  "test_case": "A simple test case to verify the fix" (optional)
+}
+
+IMPORTANT: If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bugs=false and only fill safety_issues.`;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
@@ -73,6 +97,11 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
     // Parse JSON response
     const cleanedText = text.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
     const analysis: CodeAnalysisResult = JSON.parse(cleanedText);
+
+    // Validate required fields
+    if (typeof analysis.is_safe !== 'boolean' || typeof analysis.has_bugs !== 'boolean') {
+      throw new Error('Invalid LLM response: missing required safety/bug flags');
+    }
 
     return analysis;
   } catch (error) {
