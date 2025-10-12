@@ -7,59 +7,44 @@ const MAX_CODE_LENGTH = 10000; // 10KB max
 const MAX_LINES = 500;
 
 /**
- * Dangerous imports/modules that should be blocked
- * These can access filesystem, network, or system resources
+ * Dangerous JavaScript patterns that should be blocked
+ * These can access Node.js APIs, execute arbitrary code, or cause issues
  */
-const DANGEROUS_PATTERNS = {
-  python: [
-    'import os',
-    'from os',
-    'import sys',
-    'from sys',
-    'import subprocess',
-    'from subprocess',
-    'import socket',
-    'from socket',
-    'import requests',
-    'from requests',
-    'import urllib',
-    'from urllib',
-    'import shutil',
-    'from shutil',
-    'import pathlib',
-    'from pathlib',
-    '__import__',
-    'eval(',
-    'exec(',
-    'compile(',
-    'open(',
-    'file(',
-    'input(',
-    'raw_input(',
-  ],
-  javascript: [
-    'require(',
-    'import(',
-    'eval(',
-    'Function(',
-    'require("fs")',
-    'require("child_process")',
-    'require("net")',
-    'require("http")',
-    'require("https")',
-    'require("os")',
-    'require("process")',
-    'process.exit',
-    'process.env',
-    'require(\'fs\')',
-    'require(\'child_process\')',
-    'require(\'net\')',
-    'require(\'http\')',
-    'require(\'https\')',
-    'require(\'os\')',
-    'require(\'process\')',
-  ],
-};
+const DANGEROUS_PATTERNS = [
+  // Node.js module imports (shouldn't exist in isolated-vm but block anyway)
+  'require(',
+  'import(',
+  'import ',
+  'from ',
+
+  // Dangerous functions
+  'eval(',
+  'Function(',
+  'setTimeout(',
+  'setInterval(',
+  'setImmediate(',
+
+  // Process/system access
+  'process.',
+  'global.',
+  '__dirname',
+  '__filename',
+
+  // Constructor tricks to break sandbox
+  'constructor.constructor',
+  '.constructor(',
+  'this.constructor',
+
+  // Prototype pollution
+  '__proto__',
+  'prototype.constructor',
+
+  // Common Node.js globals
+  'Buffer',
+  'module',
+  'exports',
+  'globalThis',
+];
 
 /**
  * Result of sanitization check
@@ -71,48 +56,41 @@ export interface SanitizationResult {
 }
 
 /**
- * Detect programming language from code content
+ * Validate that code appears to be JavaScript
  * @param code - The code to analyze
- * @returns Detected language or 'unknown'
+ * @returns true if code looks like JavaScript
  */
-export function detectLanguage(code: string): 'python' | 'javascript' | 'unknown' {
+export function isJavaScript(code: string): boolean {
   const trimmedCode = code.trim();
 
-  // Python indicators
-  if (
-    /def\s+\w+\s*\(/m.test(trimmedCode) ||
-    /import\s+\w+/m.test(trimmedCode) ||
-    /print\s*\(/m.test(trimmedCode) ||
-    /:\s*$/m.test(trimmedCode)
-  ) {
-    return 'python';
-  }
-
-  // JavaScript indicators
-  if (
+  // Check for JavaScript indicators
+  const hasJSPatterns =
     /function\s+\w+\s*\(/m.test(trimmedCode) ||
     /const\s+\w+\s*=/m.test(trimmedCode) ||
     /let\s+\w+\s*=/m.test(trimmedCode) ||
+    /var\s+\w+\s*=/m.test(trimmedCode) ||
     /console\.log\s*\(/m.test(trimmedCode) ||
-    /=>\s*{/m.test(trimmedCode)
-  ) {
-    return 'javascript';
-  }
+    /=>\s*[{(]/m.test(trimmedCode) ||
+    /class\s+\w+/m.test(trimmedCode);
 
-  return 'unknown';
+  // Check for non-JavaScript indicators (Python, etc.)
+  const hasPythonPatterns =
+    /def\s+\w+\s*\(/m.test(trimmedCode) ||
+    /import\s+\w+/m.test(trimmedCode) ||
+    /print\s*\(/m.test(trimmedCode);
+
+  return hasJSPatterns || !hasPythonPatterns;
 }
 
 /**
- * Check if code contains dangerous patterns
+ * Check if code contains dangerous JavaScript patterns
  * @param code - The code to check
- * @param language - Programming language
  * @returns List of detected dangerous patterns
  */
-function checkDangerousPatterns(code: string, language: string): string[] {
-  const patterns = DANGEROUS_PATTERNS[language as keyof typeof DANGEROUS_PATTERNS] || [];
+function checkDangerousPatterns(code: string): string[] {
   const detected: string[] = [];
 
-  for (const pattern of patterns) {
+  for (const pattern of DANGEROUS_PATTERNS) {
     if (code.includes(pattern)) {
       detected.push(pattern);
     }
@@ -172,12 +150,11 @@ function checkSuspiciousPatterns(code: string): string[] {
 }
 
 /**
- * Main sanitization function - validates and checks code for safety
- * @param code - The code to sanitize
- * @param language - Optional language hint ('python' or 'javascript')
+ * Main sanitization function - validates JavaScript code for safety
+ * @param code - The JavaScript code to sanitize
  * @returns Sanitization result with validation status and messages
  */
-export function sanitizeCode(code: string, language?: string): SanitizationResult {
+export function sanitizeCode(code: string): SanitizationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -187,10 +164,9 @@ export function sanitizeCode(code: string, language?: string): SanitizationResul
     return { isValid: false, errors, warnings };
   }
 
-  // Detect language if not provided
-  const detectedLanguage = language || detectLanguage(code);
-  if (detectedLanguage === 'unknown' && !language) {
-    warnings.push('Could not detect programming language - limited validation applied');
+  // Check if code appears to be JavaScript
+  if (!isJavaScript(code)) {
+    errors.push('Code does not appear to be valid JavaScript. Only JavaScript is supported.');
   }
 
   // Check code size limits
@@ -198,7 +174,7 @@ export function sanitizeCode(code: string, language?: string): SanitizationResul
   errors.push(...sizeErrors);
 
   // Check for dangerous patterns
-  const dangerousPatterns = checkDangerousPatterns(code, detectedLanguage);
+  const dangerousPatterns = checkDangerousPatterns(code);
   if (dangerousPatterns.length > 0) {
     errors.push(
       `Code contains dangerous patterns: ${dangerousPatterns.slice(0, 3).join(', ')}${
@@ -220,12 +196,11 @@ export function sanitizeCode(code: string, language?: string): SanitizationResul
 
 /**
  * Sanitize code and throw error if invalid
- * @param code - The code to sanitize
- * @param language - Optional language hint
+ * @param code - The JavaScript code to sanitize
  * @throws Error if code is invalid
  */
-export function sanitizeCodeOrThrow(code: string, language?: string): void {
-  const result = sanitizeCode(code, language);
+export function sanitizeCodeOrThrow(code: string): void {
+  const result = sanitizeCode(code);
 
   if (!result.isValid) {
     throw new Error(`Code validation failed:\n${result.errors.join('\n')}`);
@@ -237,21 +212,18 @@ export function sanitizeCodeOrThrow(code: string, language?: string): void {
 }
 
 /**
- * Get list of blocked patterns for a language
- * @param language - Programming language
+ * Get list of all blocked JavaScript patterns
  * @returns Array of dangerous patterns
  */
-export function getDangerousPatterns(language: string): string[] {
-  return DANGEROUS_PATTERNS[language as keyof typeof DANGEROUS_PATTERNS] || [];
+export function getDangerousPatterns(): string[] {
+  return [...DANGEROUS_PATTERNS];
 }
 
 /**
  * Check if a specific pattern is dangerous
  * @param pattern - The pattern to check
- * @param language - Programming language
  * @returns true if pattern is in the dangerous list
  */
-export function isDangerousPattern(pattern: string, language: string): boolean {
-  const patterns = DANGEROUS_PATTERNS[language as keyof typeof DANGEROUS_PATTERNS] || [];
-  return patterns.some((p) => pattern.includes(p));
+export function isDangerousPattern(pattern: string): boolean {
+  return DANGEROUS_PATTERNS.some((p) => pattern.includes(p));
 }

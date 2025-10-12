@@ -41,40 +41,40 @@ export interface FixSuggestionResult {
 }
 
 /**
- * Analyze code for safety and bugs (SECURITY-FIRST approach)
+ * Analyze JavaScript code for safety and bugs (SECURITY-FIRST approach)
  * This function MUST be called before executing any user-submitted code.
  *
- * @param code - The code to analyze
- * @param language - Programming language (e.g., 'python', 'javascript')
+ * @param code - The JavaScript code to analyze
  * @returns Analysis result with safety validation and bug details
  * @throws Error if LLM call fails or response is invalid
  */
-export async function analyzeCode(
-  code: string,
-  language: string = 'python'
-): Promise<CodeAnalysisResult> {
+export async function analyzeCode(code: string): Promise<CodeAnalysisResult> {
   try {
     const model = getModel();
 
-    const prompt = `You are a security-aware code debugging assistant. Your PRIMARY job is to validate code safety BEFORE analyzing bugs.
+    const prompt = `You are a security-aware JavaScript debugging assistant. Your PRIMARY job is to validate code safety BEFORE analyzing bugs.
 
 CODE TO ANALYZE:
-\`\`\`${language}
+\`\`\`javascript
 ${code}
 \`\`\`
 
 CRITICAL SECURITY CHECK (Step 1):
-Check if this code is SAFE to execute in a sandboxed environment. Look for:
-- File system access (open, read, write, delete files)
-- Network requests (HTTP, sockets, external connections)
-- Process execution (subprocess, child_process, system calls)
-- Dangerous functions (eval, exec, compile, __import__)
-- Obfuscation attempts (base64, hex encoding, string concatenation to hide imports)
-- Resource exhaustion (infinite loops, memory bombs)
-- Any other malicious patterns
+Check if this JavaScript code is SAFE to execute in an isolated-vm sandbox (no Node.js APIs available). Look for:
+- Attempts to access Node.js APIs (require, import, Buffer, process, fs, etc.)
+- Dangerous functions (eval, Function constructor, setTimeout, setInterval)
+- Constructor tricks to escape sandbox (constructor.constructor, __proto__, prototype pollution)
+- Obfuscation attempts (base64, hex encoding, string concatenation to hide dangerous calls)
+- Resource exhaustion (infinite loops, memory bombs with large arrays/objects)
+- Any other malicious patterns or sandbox escape attempts
 
 BUG ANALYSIS (Step 2 - only if code is safe):
-If the code is safe, analyze it for bugs and logic errors.
+If the code is safe, analyze it for bugs and logic errors common in JavaScript:
+- Syntax errors
+- Type errors (undefined variables, wrong types)
+- Logic errors (wrong conditions, off-by-one errors)
+- Reference errors
+- Runtime errors
 
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
@@ -112,24 +112,22 @@ IMPORTANT: If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bug
 }
 
 /**
- * Generate a fixed version of the buggy code
- * @param code - The original buggy code
+ * Generate a fixed version of the buggy JavaScript code
+ * @param code - The original buggy JavaScript code
  * @param analysisResult - Previous analysis result (optional)
- * @param language - Programming language
  * @returns Fixed code with explanation
  */
 export async function suggestFix(
   code: string,
-  analysisResult?: CodeAnalysisResult,
-  language: string = 'python'
+  analysisResult?: CodeAnalysisResult
 ): Promise<FixSuggestionResult> {
   try {
     const model = getModel();
 
-    let prompt = `You are a code debugging assistant. Fix the following buggy ${language} code.
+    let prompt = `You are a JavaScript debugging assistant. Fix the following buggy JavaScript code.
 
 ORIGINAL CODE:
-\`\`\`${language}
+\`\`\`javascript
 ${code}
 \`\`\`
 `;
@@ -146,7 +144,7 @@ KNOWN ISSUE:
     prompt += `
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
-  "fixed_code": "Complete corrected code",
+  "fixed_code": "Complete corrected JavaScript code",
   "changes_made": ["Change 1", "Change 2"],
   "confidence": "high/medium/low"
 }`;

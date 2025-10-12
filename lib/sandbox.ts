@@ -1,11 +1,4 @@
-import { exec, execFile } from 'child_process';
-import { promisify } from 'util';
-import { writeFile, unlink, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { randomBytes } from 'crypto';
-
-const execAsync = promisify(exec);
+import ivm from 'isolated-vm';
 
 /**
  * Maximum execution time in milliseconds
@@ -31,56 +24,80 @@ export interface ExecutionResult {
 }
 
 /**
- * Supported programming languages
- */
-export type SupportedLanguage = 'python' | 'javascript';
-
-/**
- * Generate a unique temporary file path
- * @param extension - File extension (e.g., 'py', 'js')
- * @returns Absolute path to temporary file
- */
-function getTempFilePath(extension: string): string {
-  const randomId = randomBytes(16).toString('hex');
-  return join(tmpdir(), `code_${randomId}.${extension}`);
-}
-
-/**
- * Execute Python code in a sandboxed environment
- * @param code - Python code to execute
+ * Execute JavaScript code in an isolated VM sandbox
+ * Uses isolated-vm for true V8 isolation with no access to Node.js APIs
+ * @param code - JavaScript code to execute
  * @returns Execution result with stdout/stderr
  */
-async function executePython(code: string): Promise<ExecutionResult> {
+async function executeJavaScript(code: string): Promise<ExecutionResult> {
   const startTime = Date.now();
-  let tempFile: string | null = null;
+  const outputs: string[] = [];
+  const errors: string[] = [];
 
   try {
-    // Create temporary file
-    tempFile = getTempFilePath('py');
-    await writeFile(tempFile, code, 'utf-8');
+    // Create isolated VM with memory limit (16MB)
+    const isolate = new ivm.Isolate({ memoryLimit: 16 });
+    const context = await isolate.createContext();
 
-    // Execute Python with security restrictions
-    const { stdout, stderr } = await execAsync(
-      // Use python3 with isolation flags:
-      // -I: isolated mode (no site-packages, no user site)
-      // -B: don't write .pyc files
-      // -s: don't add user site directory
-      `python3 -I -B -s "${tempFile}"`,
-      {
-        timeout: EXECUTION_TIMEOUT,
-        maxBuffer: MAX_BUFFER,
-        env: {}, // Empty environment - NO access to environment variables!
-        cwd: tmpdir(), // Run in temp directory
-        shell: true,
+    // Inject a safe console.log implementation
+    const jail = context.global;
+    await jail.set('global', jail.derefInto());
+
+    // Create console.log that captures output
+    await jail.set('_captureOutput', new ivm.Reference((text: string) => {
+      outputs.push(String(text));
+    }));
+
+    await jail.set('_captureError', new ivm.Reference((text: string) => {
+      errors.push(String(text));
+    }));
+
+    // Setup console object
+    await context.eval(`
+      global.console = {
+        log: (...args) => {
+          const message = args.map(arg => {
+            if (typeof arg === 'object') {
+              try {
+                return JSON.stringify(arg);
+              } catch (e) {
+                return String(arg);
+              }
+            }
+            return String(arg);
+          }).join(' ');
+          _captureOutput.applySync(undefined, [message]);
+        },
+        error: (...args) => {
+          const message = args.map(arg => String(arg)).join(' ');
+          _captureError.applySync(undefined, [message]);
+        }
+      };
+    `);
+
+    // Wrap user code to catch errors
+    const wrappedCode = `
+      try {
+        ${code}
+      } catch (error) {
+        _captureError.applySync(undefined, [error.message || String(error)]);
+        throw error;
       }
-    );
+    `;
+
+    // Execute code with timeout
+    const script = await isolate.compileScript(wrappedCode);
+    await script.run(context, { timeout: EXECUTION_TIMEOUT });
 
     const executionTime = Date.now() - startTime;
 
+    // Dispose of isolate
+    isolate.dispose();
+
     return {
       success: true,
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
+      stdout: outputs.join('\n'),
+      stderr: errors.join('\n'),
       exitCode: 0,
       timedOut: false,
       executionTime,
@@ -89,107 +106,28 @@ async function executePython(code: string): Promise<ExecutionResult> {
     const executionTime = Date.now() - startTime;
 
     // Check if timeout occurred
-    const timedOut = error.killed && error.signal === 'SIGTERM';
+    const timedOut = error.message?.includes('Script execution timed out');
 
     return {
       success: false,
-      stdout: error.stdout?.trim() || '',
-      stderr: error.stderr?.trim() || '',
+      stdout: outputs.join('\n'),
+      stderr: errors.join('\n'),
       error: timedOut
         ? `Execution timed out after ${EXECUTION_TIMEOUT}ms`
         : error.message || 'Unknown execution error',
-      exitCode: error.code,
+      exitCode: 1,
       timedOut,
       executionTime,
     };
-  } finally {
-    // Clean up temporary file
-    if (tempFile) {
-      try {
-        await unlink(tempFile);
-      } catch (cleanupError) {
-        console.warn('Failed to clean up temp file:', cleanupError);
-      }
-    }
   }
 }
 
 /**
  * Execute JavaScript code in a sandboxed environment
  * @param code - JavaScript code to execute
- * @returns Execution result with stdout/stderr
- */
-async function executeJavaScript(code: string): Promise<ExecutionResult> {
-  const startTime = Date.now();
-  let tempFile: string | null = null;
-
-  try {
-    // Create temporary file
-    tempFile = getTempFilePath('js');
-    await writeFile(tempFile, code, 'utf-8');
-
-    // Execute Node.js with security restrictions
-    const { stdout, stderr } = await execAsync(
-      // Run Node.js with limited permissions
-      `node --no-warnings "${tempFile}"`,
-      {
-        timeout: EXECUTION_TIMEOUT,
-        maxBuffer: MAX_BUFFER,
-        env: {}, // Empty environment - NO access to environment variables!
-        cwd: tmpdir(), // Run in temp directory
-        shell: true,
-      }
-    );
-
-    const executionTime = Date.now() - startTime;
-
-    return {
-      success: true,
-      stdout: stdout.trim(),
-      stderr: stderr.trim(),
-      exitCode: 0,
-      timedOut: false,
-      executionTime,
-    };
-  } catch (error: any) {
-    const executionTime = Date.now() - startTime;
-
-    // Check if timeout occurred
-    const timedOut = error.killed && error.signal === 'SIGTERM';
-
-    return {
-      success: false,
-      stdout: error.stdout?.trim() || '',
-      stderr: error.stderr?.trim() || '',
-      error: timedOut
-        ? `Execution timed out after ${EXECUTION_TIMEOUT}ms`
-        : error.message || 'Unknown execution error',
-      exitCode: error.code,
-      timedOut,
-      executionTime,
-    };
-  } finally {
-    // Clean up temporary file
-    if (tempFile) {
-      try {
-        await unlink(tempFile);
-      } catch (cleanupError) {
-        console.warn('Failed to clean up temp file:', cleanupError);
-      }
-    }
-  }
-}
-
-/**
- * Execute code in a sandboxed environment
- * @param code - Code to execute
- * @param language - Programming language
  * @returns Execution result with stdout/stderr and timing info
  */
-export async function executeCode(
-  code: string,
-  language: SupportedLanguage
-): Promise<ExecutionResult> {
+export async function executeCode(code: string): Promise<ExecutionResult> {
   // Validate inputs
   if (!code || code.trim().length === 0) {
     return {
@@ -202,36 +140,17 @@ export async function executeCode(
     };
   }
 
-  // Route to appropriate executor
-  switch (language) {
-    case 'python':
-      return executePython(code);
-    case 'javascript':
-      return executeJavaScript(code);
-    default:
-      return {
-        success: false,
-        stdout: '',
-        stderr: '',
-        error: `Unsupported language: ${language}`,
-        timedOut: false,
-        executionTime: 0,
-      };
-  }
+  return executeJavaScript(code);
 }
 
 /**
  * Execute code and throw error if execution fails
- * @param code - Code to execute
- * @param language - Programming language
+ * @param code - JavaScript code to execute
  * @returns Execution result
  * @throws Error if execution fails
  */
-export async function executeCodeOrThrow(
-  code: string,
-  language: SupportedLanguage
-): Promise<ExecutionResult> {
-  const result = await executeCode(code, language);
+export async function executeCodeOrThrow(code: string): Promise<ExecutionResult> {
+  const result = await executeCode(code);
 
   if (!result.success) {
     throw new Error(
