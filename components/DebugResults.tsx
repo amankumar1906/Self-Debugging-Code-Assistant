@@ -101,6 +101,20 @@ export default function DebugResults({ result }: DebugResultsProps) {
     return `${hours}h ${remainingMinutes}m`;
   };
 
+  // Deduplicate steps - keep only the latest status for each step name
+  const deduplicatedSteps = result.steps.reduce((acc, step) => {
+    const existingIndex = acc.findIndex(s => s.step === step.step);
+    if (existingIndex >= 0) {
+      // Replace with newer step (later timestamp)
+      if (step.timestamp >= acc[existingIndex].timestamp) {
+        acc[existingIndex] = step;
+      }
+    } else {
+      acc.push(step);
+    }
+    return acc;
+  }, [] as DebugStep[]);
+
   return (
     <div className="w-full mt-8 space-y-6">
       {/* Overall Status */}
@@ -158,7 +172,7 @@ export default function DebugResults({ result }: DebugResultsProps) {
       <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
         <h4 className="font-semibold mb-3">Execution Steps</h4>
         <div className="space-y-3">
-          {result.steps.map((step, index) => (
+          {deduplicatedSteps.map((step, index) => (
             <div key={index} className="flex items-start gap-3">
               <div className="flex-shrink-0 mt-0.5">{getStatusIcon(step.status)}</div>
               <div className="flex-1 min-w-0">
