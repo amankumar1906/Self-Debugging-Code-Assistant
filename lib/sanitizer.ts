@@ -7,43 +7,28 @@ const MAX_CODE_LENGTH = 10000; // 10KB max
 const MAX_LINES = 500;
 
 /**
- * Dangerous JavaScript patterns that should be blocked
- * These can access Node.js APIs, execute arbitrary code, or cause issues
+ * Dangerous Node.js-specific patterns that should be blocked
+ * Focus on actual threats, not browser-safe JS features
+ * isolated-vm will block these anyway, but we fail fast for better UX
  */
 const DANGEROUS_PATTERNS = [
-  // Node.js module imports (shouldn't exist in isolated-vm but block anyway)
+  // Node.js module imports (don't exist in isolated-vm)
   'require(',
-  'import(',
-  'import ',
-  'from ',
 
-  // Dangerous functions
-  'eval(',
-  'Function(',
-  'setTimeout(',
-  'setInterval(',
-  'setImmediate(',
-
-  // Process/system access
+  // Node.js-specific globals (don't exist in isolated-vm)
   'process.',
-  'global.',
   '__dirname',
   '__filename',
+  'Buffer.',
+  'module.',
+  'exports.',
 
-  // Constructor tricks to break sandbox
-  'constructor.constructor',
-  '.constructor(',
-  'this.constructor',
-
-  // Prototype pollution
-  '__proto__',
-  'prototype.constructor',
-
-  // Common Node.js globals
-  'Buffer',
-  'module',
-  'exports',
-  'globalThis',
+  // File system / networking (Node.js only)
+  'fs.',
+  'http.',
+  'https.',
+  'net.',
+  'child_process',
 ];
 
 /**

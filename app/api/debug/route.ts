@@ -231,6 +231,32 @@ export async function POST(request: NextRequest) {
     addStep(steps, 'Generate Fix', 'pending');
     const fixSuggestion = await suggestFix(originalCode);
 
+    // Check if LLM detected malicious code
+    if (fixSuggestion.is_malicious) {
+      addStep(
+        steps,
+        'Generate Fix',
+        'error',
+        'Malicious code detected',
+        { reason: fixSuggestion.malicious_reason }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          steps,
+          originalCode,
+          error: `Code appears to be malicious: ${fixSuggestion.malicious_reason}`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.resetAt,
+          },
+        } as DebugResponse,
+        { status: 400 }
+      );
+    }
+
     addStep(
       steps,
       'Generate Fix',
@@ -241,6 +267,38 @@ export async function POST(request: NextRequest) {
         confidence: fixSuggestion.confidence,
       }
     );
+
+    // Step 5.5: Validate fixed code before execution
+    addStep(steps, 'Validate Fixed Code', 'pending');
+    const fixedSanitization = sanitizeCode(fixSuggestion.fixed_code);
+
+    if (!fixedSanitization.isValid) {
+      addStep(
+        steps,
+        'Validate Fixed Code',
+        'error',
+        'LLM generated dangerous code',
+        { errors: fixedSanitization.errors }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          steps,
+          originalCode,
+          fixedCode: fixSuggestion.fixed_code,
+          error: `LLM fix validation failed: ${fixedSanitization.errors.join(', ')}`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.resetAt,
+          },
+        } as DebugResponse,
+        { status: 400 }
+      );
+    }
+
+    addStep(steps, 'Validate Fixed Code', 'success', 'Fixed code is safe');
 
     // Step 6: Execute fixed code
     addStep(steps, 'Execute Fixed Code', 'pending');
@@ -292,7 +350,65 @@ export async function POST(request: NextRequest) {
     addStep(steps, 'Retry Fix', 'pending');
     const retryFix = await suggestFix(fixSuggestion.fixed_code);
 
+    // Check if retry detected malicious code
+    if (retryFix.is_malicious) {
+      addStep(
+        steps,
+        'Retry Fix',
+        'error',
+        'Malicious code detected on retry',
+        { reason: retryFix.malicious_reason }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          steps,
+          originalCode,
+          error: `Code appears to be malicious: ${retryFix.malicious_reason}`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.resetAt,
+          },
+        } as DebugResponse,
+        { status: 400 }
+      );
+    }
+
     addStep(steps, 'Retry Fix', 'success', 'Generated second fix attempt');
+
+    // Step 7.5: Validate retry fix
+    addStep(steps, 'Validate Retry Fix', 'pending');
+    const retrySanitization = sanitizeCode(retryFix.fixed_code);
+
+    if (!retrySanitization.isValid) {
+      addStep(
+        steps,
+        'Validate Retry Fix',
+        'error',
+        'LLM generated dangerous code on retry',
+        { errors: retrySanitization.errors }
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          steps,
+          originalCode,
+          fixedCode: retryFix.fixed_code,
+          error: `LLM retry fix validation failed: ${retrySanitization.errors.join(', ')}`,
+          rateLimit: {
+            limit: rateLimitResult.limit,
+            remaining: rateLimitResult.remaining,
+            resetAt: rateLimitResult.resetAt,
+          },
+        } as DebugResponse,
+        { status: 400 }
+      );
+    }
+
+    addStep(steps, 'Validate Retry Fix', 'success', 'Retry fix is safe');
 
     // Step 8: Execute retry
     addStep(steps, 'Execute Retry Fix', 'pending');

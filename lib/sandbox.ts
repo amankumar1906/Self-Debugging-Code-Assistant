@@ -3,7 +3,7 @@ import ivm from 'isolated-vm';
 /**
  * Maximum execution time in milliseconds
  */
-const EXECUTION_TIMEOUT = 5000; // 5 seconds
+const EXECUTION_TIMEOUT = 10000; // 10 seconds
 
 /**
  * Maximum output buffer size (100KB)

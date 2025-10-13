@@ -35,6 +35,8 @@ export interface CodeAnalysisResult {
  * Interface for fix suggestion result
  */
 export interface FixSuggestionResult {
+  is_malicious: boolean;
+  malicious_reason?: string;
   fixed_code: string;
   changes_made: string[];
   confidence: string;
@@ -124,7 +126,24 @@ export async function suggestFix(
   try {
     const model = getModel();
 
-    let prompt = `You are a JavaScript debugging assistant. Fix the following buggy JavaScript code.
+    let prompt = `You are a security-aware JavaScript debugging assistant.
+
+STEP 1: SECURITY CHECK
+First, determine if the code contains malicious patterns or attempts to:
+- Access Node.js server APIs (require, fs, process, child_process, http, net)
+- Obfuscate malicious intent (base64 encoded payloads, hex strings)
+- Attempt deliberate security exploits
+
+If the code appears malicious or is intentionally trying to attack the system, set is_malicious=true and explain why. DO NOT attempt to fix malicious code.
+
+STEP 2: FIX BUGS (only if not malicious)
+If the code is safe but has bugs, fix it using standard JavaScript (ES6+):
+- ✅ ALLOWED: All standard JavaScript (async/await, Promises, setTimeout, eval, etc.)
+- ✅ ALLOWED: Browser APIs simulation (limited - they may not work in sandbox)
+- ❌ FORBIDDEN: Node.js server APIs (require, fs, process, Buffer, http, child_process)
+
+NOTE: The code runs in an isolated browser-like environment with 10-second timeout and 16MB memory.
+setTimeout/setInterval won't actually work but are not security threats - just fix the logic bugs.
 
 ORIGINAL CODE:
 \`\`\`javascript
@@ -144,10 +163,14 @@ KNOWN ISSUE:
     prompt += `
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
-  "fixed_code": "Complete corrected JavaScript code",
-  "changes_made": ["Change 1", "Change 2"],
+  "is_malicious": true/false,
+  "malicious_reason": "Explanation if malicious" (only if is_malicious=true),
+  "fixed_code": "Complete corrected JavaScript code" (empty string if malicious),
+  "changes_made": ["Change 1", "Change 2"] (empty array if malicious),
   "confidence": "high/medium/low"
-}`;
+}
+
+IMPORTANT: If is_malicious=true, leave fixed_code as empty string and do not attempt to fix the code.`;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
