@@ -1,35 +1,12 @@
 /**
  * Input sanitization and validation for code execution safety
+ * Focus: Size limits and resource protection, not keyword blocking
+ * Security is handled by isolated-vm sandbox
  */
 
 // Maximum code size limits
 const MAX_CODE_LENGTH = 10000; // 10KB max
 const MAX_LINES = 500;
-
-/**
- * Dangerous Node.js-specific patterns that should be blocked
- * Focus on actual threats, not browser-safe JS features
- * isolated-vm will block these anyway, but we fail fast for better UX
- */
-const DANGEROUS_PATTERNS = [
-  // Node.js module imports (don't exist in isolated-vm)
-  'require(',
-
-  // Node.js-specific globals (don't exist in isolated-vm)
-  'process.',
-  '__dirname',
-  '__filename',
-  'Buffer.',
-  'module.',
-  'exports.',
-
-  // File system / networking (Node.js only)
-  'fs.',
-  'http.',
-  'https.',
-  'net.',
-  'child_process',
-];
 
 /**
  * Result of sanitization check
@@ -38,50 +15,6 @@ export interface SanitizationResult {
   isValid: boolean;
   errors: string[];
   warnings: string[];
-}
-
-/**
- * Validate that code appears to be JavaScript
- * @param code - The code to analyze
- * @returns true if code looks like JavaScript
- */
-export function isJavaScript(code: string): boolean {
-  const trimmedCode = code.trim();
-
-  // Check for JavaScript indicators
-  const hasJSPatterns =
-    /function\s+\w+\s*\(/m.test(trimmedCode) ||
-    /const\s+\w+\s*=/m.test(trimmedCode) ||
-    /let\s+\w+\s*=/m.test(trimmedCode) ||
-    /var\s+\w+\s*=/m.test(trimmedCode) ||
-    /console\.log\s*\(/m.test(trimmedCode) ||
-    /=>\s*[{(]/m.test(trimmedCode) ||
-    /class\s+\w+/m.test(trimmedCode);
-
-  // Check for non-JavaScript indicators (Python, etc.)
-  const hasPythonPatterns =
-    /def\s+\w+\s*\(/m.test(trimmedCode) ||
-    /import\s+\w+/m.test(trimmedCode) ||
-    /print\s*\(/m.test(trimmedCode);
-
-  return hasJSPatterns || !hasPythonPatterns;
-}
-
-/**
- * Check if code contains dangerous JavaScript patterns
- * @param code - The code to check
- * @returns List of detected dangerous patterns
- */
-function checkDangerousPatterns(code: string): string[] {
-  const detected: string[] = [];
-
-  for (const pattern of DANGEROUS_PATTERNS) {
-    if (code.includes(pattern)) {
-      detected.push(pattern);
-    }
-  }
-
-  return detected;
 }
 
 /**
@@ -107,28 +40,23 @@ function validateCodeSize(code: string): string[] {
 }
 
 /**
- * Check for suspicious patterns that might indicate malicious code
+ * Check for suspicious patterns that might indicate resource abuse
  * @param code - The code to check
  * @returns List of suspicious patterns found
  */
 function checkSuspiciousPatterns(code: string): string[] {
   const warnings: string[] = [];
 
-  // Check for very long lines (might be obfuscated)
+  // Check for very long lines (might be obfuscated or minified)
   const lines = code.split('\n');
-  const longLines = lines.filter((line) => line.length > 200);
+  const longLines = lines.filter((line) => line.length > 500);
   if (longLines.length > 0) {
-    warnings.push(`Found ${longLines.length} unusually long lines (potential obfuscation)`);
+    warnings.push(`Found ${longLines.length} very long lines (potential obfuscation/minified code)`);
   }
 
-  // Check for base64-like strings (might be encoded payloads)
-  if (/[A-Za-z0-9+/]{50,}={0,2}/.test(code)) {
-    warnings.push('Found base64-like strings (potential encoded payload)');
-  }
-
-  // Check for hex strings (might be shellcode)
-  if (/\\x[0-9a-fA-F]{2}/.test(code) || /0x[0-9a-fA-F]{8,}/.test(code)) {
-    warnings.push('Found hex-encoded strings (potential shellcode)');
+  // Check for large base64-like strings (might be data bombs)
+  if (/[A-Za-z0-9+/]{500,}={0,2}/.test(code)) {
+    warnings.push('Found very large base64-like strings');
   }
 
   return warnings;
@@ -149,26 +77,11 @@ export function sanitizeCode(code: string): SanitizationResult {
     return { isValid: false, errors, warnings };
   }
 
-  // Check if code appears to be JavaScript
-  if (!isJavaScript(code)) {
-    errors.push('Code does not appear to be valid JavaScript. Only JavaScript is supported.');
-  }
-
-  // Check code size limits
+  // Check code size limits (prevent resource abuse)
   const sizeErrors = validateCodeSize(code);
   errors.push(...sizeErrors);
 
-  // Check for dangerous patterns
-  const dangerousPatterns = checkDangerousPatterns(code);
-  if (dangerousPatterns.length > 0) {
-    errors.push(
-      `Code contains dangerous patterns: ${dangerousPatterns.slice(0, 3).join(', ')}${
-        dangerousPatterns.length > 3 ? '...' : ''
-      }`
-    );
-  }
-
-  // Check for suspicious patterns
+  // Check for suspicious patterns (warnings only)
   const suspiciousPatterns = checkSuspiciousPatterns(code);
   warnings.push(...suspiciousPatterns);
 
@@ -194,21 +107,4 @@ export function sanitizeCodeOrThrow(code: string): void {
   if (result.warnings.length > 0) {
     console.warn('Code validation warnings:', result.warnings);
   }
-}
-
-/**
- * Get list of all blocked JavaScript patterns
- * @returns Array of dangerous patterns
- */
-export function getDangerousPatterns(): string[] {
-  return [...DANGEROUS_PATTERNS];
-}
-
-/**
- * Check if a specific pattern is dangerous
- * @param pattern - The pattern to check
- * @returns true if pattern is in the dangerous list
- */
-export function isDangerousPattern(pattern: string): boolean {
-  return DANGEROUS_PATTERNS.some((p) => pattern.includes(p));
 }

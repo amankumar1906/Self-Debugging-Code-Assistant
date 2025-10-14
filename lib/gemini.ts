@@ -37,6 +37,7 @@ export interface CodeAnalysisResult {
 export interface FixSuggestionResult {
   is_malicious: boolean;
   malicious_reason?: string;
+  reasoning: string[]; // Chain-of-thought steps
   fixed_code: string;
   changes_made: string[];
   confidence: string;
@@ -126,24 +127,21 @@ export async function suggestFix(
   try {
     const model = getModel();
 
-    let prompt = `You are a security-aware JavaScript debugging assistant.
+    let prompt = `You are a JavaScript debugging assistant.
 
-STEP 1: SECURITY CHECK
-First, determine if the code contains malicious patterns or attempts to:
-- Access Node.js server APIs (require, fs, process, child_process, http, net)
-- Obfuscate malicious intent (base64 encoded payloads, hex strings)
-- Attempt deliberate security exploits
+The user's code will be executed in an isolated sandbox (isolated-vm) with:
+- ✅ 10-second timeout
+- ✅ 16MB memory limit
+- ✅ No access to Node.js APIs (require, fs, process, etc. will return "not defined")
+- ✅ Pure JavaScript execution (like browser environment)
 
-If the code appears malicious or is intentionally trying to attack the system, set is_malicious=true and explain why. DO NOT attempt to fix malicious code.
+Your job is to fix bugs in the code. The sandbox is secure, so you can assume:
+- Any Node.js API calls (require, fs, etc.) will simply fail with "X is not defined"
+- setTimeout/eval/async won't work but aren't security threats
+- Focus on fixing LOGIC bugs, not removing API calls
 
-STEP 2: FIX BUGS (only if not malicious)
-If the code is safe but has bugs, fix it using standard JavaScript (ES6+):
-- ✅ ALLOWED: All standard JavaScript (async/await, Promises, setTimeout, eval, etc.)
-- ✅ ALLOWED: Browser APIs simulation (limited - they may not work in sandbox)
-- ❌ FORBIDDEN: Node.js server APIs (require, fs, process, Buffer, http, child_process)
-
-NOTE: The code runs in an isolated browser-like environment with 10-second timeout and 16MB memory.
-setTimeout/setInterval won't actually work but are not security threats - just fix the logic bugs.
+ONLY set is_malicious=true if the code is deliberately obfuscated or attempting obvious exploits (base64 payloads, hex shellcode, etc.).
+DO NOT flag code just because it uses require() or process - those will harmlessly fail in the sandbox.
 
 ORIGINAL CODE:
 \`\`\`javascript
@@ -165,12 +163,21 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
   "is_malicious": true/false,
   "malicious_reason": "Explanation if malicious" (only if is_malicious=true),
+  "reasoning": [
+    "Step 1: What I observed about the code",
+    "Step 2: What the error message tells me",
+    "Step 3: Root cause analysis",
+    "Step 4: My solution approach"
+  ],
   "fixed_code": "Complete corrected JavaScript code" (empty string if malicious),
   "changes_made": ["Change 1", "Change 2"] (empty array if malicious),
   "confidence": "high/medium/low"
 }
 
-IMPORTANT: If is_malicious=true, leave fixed_code as empty string and do not attempt to fix the code.`;
+IMPORTANT:
+- Always include "reasoning" array with 3-5 step-by-step thoughts explaining your debugging process
+- If is_malicious=true, leave fixed_code as empty string and reasoning as empty array
+- Be conversational in reasoning - explain like teaching a student`;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
@@ -194,6 +201,55 @@ IMPORTANT: If is_malicious=true, leave fixed_code as empty string and do not att
  */
 export function isGeminiConfigured(): boolean {
   return !!process.env.GEMINI_API_KEY;
+}
+
+/**
+ * Stream fix suggestion with Chain-of-Thought reasoning
+ * @param code - The original buggy JavaScript code
+ * @param errorMessage - The execution error message
+ * @returns Async generator yielding reasoning chunks
+ */
+export async function* suggestFixStream(
+  code: string,
+  errorMessage: string
+): AsyncGenerator<string, void, unknown> {
+  try {
+    const model = getModel();
+
+    const prompt = `You are a debugging assistant. The user's code failed.
+
+ERROR: ${errorMessage}
+
+CODE:
+\`\`\`javascript
+${code}
+\`\`\`
+
+Explain your debugging process in 2-3 SHORT sentences (no code yet):
+1. What's the error telling you?
+2. What's the root cause?
+3. What needs to change?
+
+After your explanation, provide ONLY the fixed code in a code block.
+
+Example format:
+The error shows X. Root cause is Y because of Z. I'll fix it by changing A to B.
+
+\`\`\`javascript
+[fixed code here]
+\`\`\``;
+
+    const result = await model.generateContentStream(prompt);
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        yield text;
+      }
+    }
+  } catch (error) {
+    yield `Error: ${error instanceof Error ? error.message : 'Unknown error during fix generation'}`;
+  }
 }
 
 /**
