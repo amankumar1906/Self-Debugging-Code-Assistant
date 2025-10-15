@@ -1,10 +1,18 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 /**
  * Rate limit configuration
  */
 const MAX_REQUESTS_PER_HOUR = 3;
 const RATE_LIMIT_WINDOW_SECONDS = 3600; // 1 hour
+
+/**
+ * Initialize Upstash Redis client
+ */
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 /**
  * Rate limit result
@@ -42,15 +50,15 @@ export async function checkRateLimit(ip: string): Promise<RateLimitResult> {
 
   try {
     // Increment the counter
-    const count = await kv.incr(key);
+    const count = await redis.incr(key);
 
     // Set expiry on first request
     if (count === 1) {
-      await kv.expire(key, RATE_LIMIT_WINDOW_SECONDS);
+      await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
     }
 
     // Get TTL (time to live) for the key
-    const ttl = await kv.ttl(key);
+    const ttl = await redis.ttl(key);
     const resetIn = ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS;
     const resetAt = Date.now() + resetIn * 1000;
 
@@ -65,7 +73,7 @@ export async function checkRateLimit(ip: string): Promise<RateLimitResult> {
       resetIn,
     };
   } catch (error) {
-    // If KV fails, log error and allow request (fail open)
+    // If Redis fails, log error and allow request (fail open)
     console.error('Rate limit check failed:', error);
 
     // Fallback: allow request but indicate rate limiting is unavailable
@@ -107,7 +115,7 @@ export async function resetRateLimit(ip: string): Promise<void> {
   const key = `ratelimit:${sanitizedIp}`;
 
   try {
-    await kv.del(key);
+    await redis.del(key);
   } catch (error) {
     console.error('Failed to reset rate limit:', error);
   }
@@ -123,8 +131,8 @@ export async function getRateLimitStatus(ip: string): Promise<RateLimitResult> {
   const key = `ratelimit:${sanitizedIp}`;
 
   try {
-    const count = (await kv.get<number>(key)) || 0;
-    const ttl = await kv.ttl(key);
+    const count = (await redis.get<number>(key)) || 0;
+    const ttl = await redis.ttl(key);
     const resetIn = ttl > 0 ? ttl : RATE_LIMIT_WINDOW_SECONDS;
     const resetAt = Date.now() + resetIn * 1000;
 

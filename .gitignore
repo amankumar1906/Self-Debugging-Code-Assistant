@@ -43,3 +43,5 @@ next-env.d.ts
 # project files
 Prompt.md
 TODO.md
+
+.vercel
