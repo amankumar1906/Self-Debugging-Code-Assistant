@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     async start(controller) {
       try {
         // Helper to send SSE message
-        const sendMessage = (type: string, data: any) => {
+        const sendMessage = (type: string, data: Record<string, unknown>) => {
           const message = `data: ${JSON.stringify({ type, ...data })}\n\n`;
           controller.enqueue(encoder.encode(message));
         };
@@ -171,10 +171,11 @@ export async function POST(request: NextRequest) {
         }
 
         controller.close();
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorText = error instanceof Error ? error.message : 'Unknown error';
         const errorMessage = `data: ${JSON.stringify({
           type: 'error',
-          message: error.message || 'Unknown error'
+          message: errorText
         })}\n\n`;
         controller.enqueue(encoder.encode(errorMessage));
         controller.close();

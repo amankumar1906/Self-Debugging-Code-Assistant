@@ -4,13 +4,12 @@ import { useState } from 'react';
 import CodeInput from '@/components/CodeInput';
 import DebugResults from '@/components/DebugResults';
 import { useDebugStream } from '@/hooks/useDebugStream';
-import ReasoningStream from '@/components/ReasoningStream';
 
 interface DebugStep {
   step: string;
   status: 'pending' | 'success' | 'error' | 'skipped';
   message?: string;
-  data?: any;
+  data?: unknown;
   timestamp: number;
 }
 
@@ -248,7 +247,7 @@ export default function Home() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <p className="text-lg font-medium">Results will appear here</p>
-                      <p className="text-sm mt-2">Enter code and click "Debug Code"</p>
+                      <p className="text-sm mt-2">Enter code and click &quot;Debug Code&quot;</p>
                     </div>
                   </div>
                 )}
@@ -265,7 +264,7 @@ export default function Home() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <p className="text-lg font-medium">Results will appear here</p>
-                      <p className="text-sm mt-2">Enter code and click "Debug Code"</p>
+                      <p className="text-sm mt-2">Enter code and click &quot;Debug Code&quot;</p>
                     </div>
                   </div>
                 )}

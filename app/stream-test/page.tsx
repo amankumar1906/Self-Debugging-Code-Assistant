@@ -13,7 +13,6 @@ export default function StreamTestPage() {
 console.log(factorial(5));`);
 
   const {
-    steps,
     reasoning,
     isStreaming,
     output,

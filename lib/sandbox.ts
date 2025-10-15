@@ -102,11 +102,12 @@ async function executeJavaScript(code: string): Promise<ExecutionResult> {
       timedOut: false,
       executionTime,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const executionTime = Date.now() - startTime;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
 
     // Check if timeout occurred
-    const timedOut = error.message?.includes('Script execution timed out');
+    const timedOut = errorMessage.includes('Script execution timed out');
 
     return {
       success: false,
@@ -114,7 +115,7 @@ async function executeJavaScript(code: string): Promise<ExecutionResult> {
       stderr: errors.join('\n'),
       error: timedOut
         ? `Execution timed out after ${EXECUTION_TIMEOUT}ms`
-        : error.message || 'Unknown execution error',
+        : errorMessage,
       exitCode: 1,
       timedOut,
       executionTime,

@@ -4,7 +4,7 @@ interface DebugStep {
   step: string;
   status: 'pending' | 'success' | 'error' | 'skipped';
   message?: string;
-  data?: any;
+  data?: unknown;
   timestamp: number;
 }
 
@@ -34,6 +34,7 @@ export default function DebugResults({ result }: DebugResultsProps) {
     return null;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getStatusIcon = (status: DebugStep['status']) => {
     switch (status) {
       case 'success':
@@ -102,6 +103,7 @@ export default function DebugResults({ result }: DebugResultsProps) {
   };
 
   // Deduplicate steps - keep only the latest status for each step name
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const deduplicatedSteps = result.steps.reduce((acc, step) => {
     const existingIndex = acc.findIndex(s => s.step === step.step);
     if (existingIndex >= 0) {

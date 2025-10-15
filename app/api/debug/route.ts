@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzeCode, suggestFix } from '@/lib/gemini';
+import { suggestFix } from '@/lib/gemini';
 import { sanitizeCode } from '@/lib/sanitizer';
 import { executeCode } from '@/lib/sandbox';
 import { checkRateLimitOrThrow, RateLimitError } from '@/lib/ratelimit';
@@ -11,7 +11,7 @@ interface DebugStep {
   step: string;
   status: 'pending' | 'success' | 'error' | 'skipped';
   message?: string;
-  data?: any;
+  data?: unknown;
   timestamp: number;
 }
 
@@ -59,7 +59,7 @@ function addStep(
   step: string,
   status: DebugStep['status'],
   message?: string,
-  data?: any
+  data?: unknown
 ): void {
   steps.push({
     step,
@@ -406,16 +406,17 @@ export async function POST(request: NextRequest) {
       } as DebugResponse,
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Unexpected error
-    addStep(steps, 'Error', 'error', error.message || 'Unknown error');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    addStep(steps, 'Error', 'error', errorMessage);
 
     return NextResponse.json(
       {
         success: false,
         steps,
         originalCode,
-        error: `Internal error: ${error.message || 'Unknown error'}`,
+        error: `Internal error: ${errorMessage}`,
       } as DebugResponse,
       { status: 500 }
     );
