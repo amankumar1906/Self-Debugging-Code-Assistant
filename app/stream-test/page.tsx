@@ -57,23 +57,6 @@ console.log(factorial(5));`);
           <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6 overflow-y-auto" style={{ maxHeight: '600px' }}>
             <h2 className="text-xl font-semibold mb-4">Debug Output</h2>
 
-            {/* Steps */}
-            {steps.length > 0 && (
-              <div className="mb-6">
-                <h3 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-400">
-                  Execution Steps:
-                </h3>
-                <div className="space-y-2">
-                  {steps.map((step, i) => (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-green-500 mt-0.5">✓</span>
-                      <span className="text-gray-700 dark:text-gray-300">{step}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Reasoning */}
             {(reasoning || isStreaming) && (
               <div className="mb-6">

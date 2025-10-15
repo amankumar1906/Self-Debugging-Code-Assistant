@@ -108,9 +108,14 @@ IMPORTANT: If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bug
 
     return analysis;
   } catch (error) {
-    throw new Error(
-      `Failed to analyze code: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Check if it's a rate limit error from Gemini
+    if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
+      throw new Error('Heavy server load, please retry in an hour');
+    }
+
+    throw new Error(`Failed to analyze code: ${errorMessage}`);
   }
 }
 
@@ -127,38 +132,28 @@ export async function suggestFix(
   try {
     const model = getModel();
 
-    let prompt = `You are a JavaScript debugging assistant.
+    // CACHE-OPTIMIZED PROMPT STRUCTURE
+    // Static instructions first, dynamic content last
+    const staticPrefix = `You are a JavaScript debugging assistant.
 
+EXECUTION ENVIRONMENT:
 The user's code will be executed in an isolated sandbox (isolated-vm) with:
 - ✅ 10-second timeout
 - ✅ 16MB memory limit
 - ✅ No access to Node.js APIs (require, fs, process, etc. will return "not defined")
 - ✅ Pure JavaScript execution (like browser environment)
 
+TASK:
 Your job is to fix bugs in the code. The sandbox is secure, so you can assume:
 - Any Node.js API calls (require, fs, etc.) will simply fail with "X is not defined"
 - setTimeout/eval/async won't work but aren't security threats
 - Focus on fixing LOGIC bugs, not removing API calls
 
+SECURITY POLICY:
 ONLY set is_malicious=true if the code is deliberately obfuscated or attempting obvious exploits (base64 payloads, hex shellcode, etc.).
 DO NOT flag code just because it uses require() or process - those will harmlessly fail in the sandbox.
 
-ORIGINAL CODE:
-\`\`\`javascript
-${code}
-\`\`\`
-`;
-
-    if (analysisResult) {
-      prompt += `
-KNOWN ISSUE:
-- Bug: ${analysisResult.bug_description}
-- Location: ${analysisResult.bug_location}
-- Suggested Fix: ${analysisResult.suggested_fix}
-`;
-    }
-
-    prompt += `
+OUTPUT FORMAT:
 Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 {
   "is_malicious": true/false,
@@ -177,7 +172,30 @@ Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
 IMPORTANT:
 - Always include "reasoning" array with 3-5 step-by-step thoughts explaining your debugging process
 - If is_malicious=true, leave fixed_code as empty string and reasoning as empty array
-- Be conversational in reasoning - explain like teaching a student`;
+- Be conversational in reasoning - explain like teaching a student
+
+---
+
+USER SUBMISSION:`;
+
+    // Dynamic content
+    let dynamicSuffix = `
+
+CODE TO DEBUG:
+\`\`\`javascript
+${code}
+\`\`\``;
+
+    if (analysisResult) {
+      dynamicSuffix += `
+
+KNOWN ISSUE:
+- Bug: ${analysisResult.bug_description}
+- Location: ${analysisResult.bug_location}
+- Suggested Fix: ${analysisResult.suggested_fix}`;
+    }
+
+    const prompt = staticPrefix + dynamicSuffix;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
@@ -189,9 +207,14 @@ IMPORTANT:
 
     return fixSuggestion;
   } catch (error) {
-    throw new Error(
-      `Failed to generate fix: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Check if it's a rate limit error from Gemini
+    if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
+      throw new Error('Heavy server load, please retry in an hour');
+    }
+
+    throw new Error(`Failed to generate fix: ${errorMessage}`);
   }
 }
 
@@ -216,28 +239,48 @@ export async function* suggestFixStream(
   try {
     const model = getModel();
 
-    const prompt = `You are a debugging assistant. The user's code failed.
+    // CACHE-OPTIMIZED PROMPT STRUCTURE
+    // Put static instructions first (cacheable), dynamic content last
+    const staticPrefix = `You are a debugging assistant helping users fix JavaScript code errors.
 
-ERROR: ${errorMessage}
+DEBUGGING METHODOLOGY:
+When analyzing code failures, follow this process:
+1. Examine the error message to identify the error type and location
+2. Analyze the code logic to find the root cause
+3. Determine the minimal change needed to fix the issue
 
-CODE:
+OUTPUT FORMAT (STRICT - DO NOT DEVIATE):
+Write ONLY 2-3 sentences explaining the error and fix. DO NOT write any code, variable names, or code snippets in this part.
+
+Then start a code block with the complete fixed code.
+
+Example (FOLLOW EXACTLY):
+The error indicates an assignment operator where a comparison is needed. The root cause is using a single equals sign in the conditional. I'll replace it with triple equals for strict comparison.
+
 \`\`\`javascript
-${code}
+if (x === 5) {
+  console.log("works");
+}
 \`\`\`
 
-Explain your debugging process in 2-3 SHORT sentences (no code yet):
-1. What's the error telling you?
-2. What's the root cause?
-3. What needs to change?
+CRITICAL: Do NOT include ANY code before the code block. Only plain English explanation.
 
-After your explanation, provide ONLY the fixed code in a code block.
+---
 
-Example format:
-The error shows X. Root cause is Y because of Z. I'll fix it by changing A to B.
+USER REQUEST:`;
 
+    // Dynamic content appended at the end
+    const dynamicSuffix = `
+
+ERROR ENCOUNTERED:
+${errorMessage}
+
+CODE TO DEBUG:
 \`\`\`javascript
-[fixed code here]
+${code}
 \`\`\``;
+
+    const prompt = staticPrefix + dynamicSuffix;
 
     const result = await model.generateContentStream(prompt);
 
@@ -248,7 +291,14 @@ The error shows X. Root cause is Y because of Z. I'll fix it by changing A to B.
       }
     }
   } catch (error) {
-    yield `Error: ${error instanceof Error ? error.message : 'Unknown error during fix generation'}`;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during fix generation';
+
+    // Check if it's a rate limit error from Gemini
+    if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
+      yield 'Heavy server load, please retry in an hour';
+    } else {
+      yield `Error: ${errorMessage}`;
+    }
   }
 }
 

@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
             stdout: originalExecution.stdout,
             executionTime: originalExecution.executionTime
           });
-          sendMessage('complete', { success: true });
+          sendMessage('complete', { success: true, alreadyWorking: true });
           controller.close();
           return;
         }
@@ -122,28 +122,52 @@ export async function POST(request: NextRequest) {
 
         // Extract fixed code from reasoning (look for code blocks)
         const codeBlockMatch = fullReasoning.match(/```(?:javascript)?\n([\s\S]*?)```/);
-        const fixedCode = codeBlockMatch ? codeBlockMatch[1].trim() : code;
+        const fixedCode = codeBlockMatch ? codeBlockMatch[1].trim() : '';
+
+        if (!fixedCode || fixedCode === code) {
+          sendMessage('complete', { success: false, message: 'Could not extract fixed code from AI response' });
+          controller.close();
+          return;
+        }
+
+        // Guard rail: Basic malicious pattern check on AI-generated code
+        const maliciousPatterns = [
+          /eval\s*\(/i,
+          /Function\s*\(/i,
+          /constructor\s*\.\s*constructor/i,
+          /__proto__/i,
+          /require\s*\(/i,
+          /import\s+/i,
+        ];
+
+        const hasMaliciousPattern = maliciousPatterns.some(pattern => pattern.test(fixedCode));
+        if (hasMaliciousPattern) {
+          sendMessage('error', {
+            message: 'AI generated code contains potentially unsafe patterns. Please review the code manually.'
+          });
+          sendMessage('fixed-code', { code: fixedCode });
+          sendMessage('complete', { success: false });
+          controller.close();
+          return;
+        }
 
         // Step 6: Execute fixed code
-        if (fixedCode && fixedCode !== code) {
-          sendMessage('step', { message: 'Testing fixed code...' });
-          const fixedExecution = await executeCode(fixedCode);
+        sendMessage('step', { message: 'Testing fixed code...' });
+        const fixedExecution = await executeCode(fixedCode);
 
-          if (fixedExecution.success) {
-            sendMessage('step', { message: 'Fixed code works!' });
-            sendMessage('output', {
-              stdout: fixedExecution.stdout,
-              executionTime: fixedExecution.executionTime
-            });
-            sendMessage('fixed-code', { code: fixedCode });
-            sendMessage('complete', { success: true });
-          } else {
-            sendMessage('step', { message: 'Fixed code still has issues' });
-            sendMessage('error', { message: fixedExecution.error });
-            sendMessage('complete', { success: false });
-          }
+        if (fixedExecution.success) {
+          sendMessage('step', { message: 'Fixed code works!' });
+          sendMessage('output', {
+            stdout: fixedExecution.stdout,
+            executionTime: fixedExecution.executionTime
+          });
+          sendMessage('fixed-code', { code: fixedCode });
+          sendMessage('complete', { success: true });
         } else {
-          sendMessage('complete', { success: false, message: 'Could not extract fixed code' });
+          sendMessage('step', { message: 'Fixed code still has issues' });
+          sendMessage('error', { message: fixedExecution.error });
+          sendMessage('fixed-code', { code: fixedCode });
+          sendMessage('complete', { success: false });
         }
 
         controller.close();

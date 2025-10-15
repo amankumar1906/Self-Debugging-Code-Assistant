@@ -8,6 +8,7 @@ interface StreamMessage {
   code?: string;
   fullText?: string;
   success?: boolean;
+  alreadyWorking?: boolean;
   [key: string]: any;
 }
 
@@ -19,6 +20,7 @@ interface DebugStreamState {
   fixedCode: string | null;
   error: string | null;
   success: boolean | null;
+  alreadyWorking: boolean | null;
 }
 
 export function useDebugStream() {
@@ -30,6 +32,7 @@ export function useDebugStream() {
     fixedCode: null,
     error: null,
     success: null,
+    alreadyWorking: null,
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -44,6 +47,7 @@ export function useDebugStream() {
       fixedCode: null,
       error: null,
       success: null,
+      alreadyWorking: null,
     });
 
     try {
@@ -151,6 +155,7 @@ export function useDebugStream() {
                   setState(prev => ({
                     ...prev,
                     error: data.message || 'Unknown error',
+                    isStreaming: false,
                   }));
                   break;
 
@@ -158,6 +163,7 @@ export function useDebugStream() {
                   setState(prev => ({
                     ...prev,
                     success: data.success ?? false,
+                    alreadyWorking: data.alreadyWorking ?? false,
                     isStreaming: false,
                   }));
                   break;

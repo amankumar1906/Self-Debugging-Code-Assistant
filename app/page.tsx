@@ -87,18 +87,27 @@ export default function Home() {
           </p>
 
           {/* Show Reasoning Toggle */}
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showReasoning}
-                onChange={(e) => setShowReasoning(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Quick Fix
+            </span>
+            <button
+              onClick={() => setShowReasoning(!showReasoning)}
+              className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                showReasoning ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+              role="switch"
+              aria-checked={showReasoning}
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                  showReasoning ? 'translate-x-8' : 'translate-x-1'
+                }`}
               />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Show Reasoning (streaming)
-              </span>
-            </label>
+            </button>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Show Reasoning
+            </span>
           </div>
         </header>
 
@@ -108,8 +117,8 @@ export default function Home() {
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg p-6">
             <CodeInput onDebug={handleDebug} isLoading={currentIsLoading} />
 
-            {/* Error Message */}
-            {((error && !result && !showReasoning) || (showReasoning && streamState.error)) && (
+            {/* Error Message - Only show in Quick Fix mode */}
+            {error && !result && !showReasoning && (
               <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <div className="flex items-start gap-3">
                   <svg
@@ -128,7 +137,7 @@ export default function Home() {
                       Error
                     </h3>
                     <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                      {showReasoning ? streamState.error : error}
+                      {error}
                     </p>
                   </div>
                 </div>
@@ -141,43 +150,94 @@ export default function Home() {
             {showReasoning ? (
               // Streaming mode
               <>
-                {streamState.reasoning || streamState.isStreaming ? (
-                  <div className="space-y-4">
-                    <ReasoningStream reasoning={streamState.reasoning} isStreaming={streamState.isStreaming} />
+                {streamState.reasoning || streamState.isStreaming || streamState.success !== null || streamState.output || streamState.error ? (
+                  <div className="space-y-6">
+                    {/* Overall Status */}
+                    {streamState.success !== null && (
+                      <div
+                        className={`p-4 rounded-lg border-l-4 ${
+                          streamState.success
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-500'
+                            : 'bg-red-50 dark:bg-red-900/20 border-red-500'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          {streamState.success ? (
+                            <svg className="w-6 h-6 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          ) : (
+                            <svg className="w-6 h-6 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          )}
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg">
+                              {streamState.success
+                                ? (streamState.alreadyWorking ? 'Your Code Works!' : streamState.fixedCode ? 'Code Fixed Successfully!' : 'Your Code Works!')
+                                : 'Debugging Failed'}
+                            </h3>
+                            {streamState.error && <p className="text-sm mt-1 text-red-700 dark:text-red-300">{streamState.error}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
+                    {/* Error when no success state */}
+                    {streamState.error && streamState.success === null && (
+                      <div className="p-4 rounded-lg border-l-4 bg-red-50 dark:bg-red-900/20 border-red-500">
+                        <div className="flex items-start gap-3">
+                          <svg className="w-6 h-6 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg text-red-700 dark:text-red-300">Error</h3>
+                            <p className="text-sm mt-1 text-red-700 dark:text-red-300">{streamState.error}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fixed Code */}
                     {streamState.fixedCode && (
-                      <div>
-                        <h4 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-400">
-                          Fixed Code:
-                        </h4>
+                      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
+                        <h4 className="font-semibold mb-3">Fixed Code</h4>
                         <pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm font-mono overflow-x-auto">
                           {streamState.fixedCode}
                         </pre>
                       </div>
                     )}
 
+                    {/* Execution Output */}
                     {streamState.output && (
-                      <div>
-                        <h4 className="font-semibold mb-2 text-sm text-gray-600 dark:text-gray-400">
-                          Output:
-                        </h4>
+                      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
+                        <h4 className="font-semibold mb-3">Output</h4>
                         <pre className="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm font-mono whitespace-pre-wrap">
                           {streamState.output}
                         </pre>
                       </div>
                     )}
 
-                    {streamState.success !== null && (
-                      <div
-                        className={`p-4 rounded-lg ${
-                          streamState.success
-                            ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                            : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                        }`}
-                      >
-                        <p className={`font-semibold ${streamState.success ? 'text-green-700 dark:text-green-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
-                          {streamState.success ? '✓ Code Fixed!' : '⚠ Could not fix automatically'}
-                        </p>
+                    {/* AI Reasoning */}
+                    {(streamState.reasoning || streamState.isStreaming) && (
+                      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
+                        <h4 className="font-semibold mb-3">AI Reasoning</h4>
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <div className="whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
+                            {streamState.reasoning}
+                            {streamState.isStreaming && (
+                              <span className="inline-block w-2 h-4 ml-1 bg-blue-600 dark:bg-blue-400 animate-pulse"></span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

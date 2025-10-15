@@ -63,6 +63,38 @@ function checkSuspiciousPatterns(code: string): string[] {
 }
 
 /**
+ * Check if input looks like JavaScript code
+ * @param code - The input to check
+ * @returns True if it looks like valid JS code
+ */
+function looksLikeJavaScript(code: string): boolean {
+  const trimmed = code.trim();
+
+  // Check for common JS keywords/patterns
+  const jsPatterns = [
+    /^(const|let|var|function|class|if|for|while|return|import|export|async|await)\s/,
+    /^[\w$]+\s*[=:]/,  // Variable declaration or object property
+    /^console\./,      // console.log, etc
+    /^\{[\s\S]*\}$/,   // Object literal
+    /^\[[\s\S]*\]$/,   // Array literal
+    /^[\w$]+\(.*\)/,   // Function call
+    /[{};()]/,         // Has JS syntax characters
+  ];
+
+  // If it matches any JS pattern, it's likely code
+  if (jsPatterns.some(pattern => pattern.test(trimmed))) {
+    return true;
+  }
+
+  // If it's very short and has no code-like patterns, probably not code
+  if (trimmed.length < 20 && !/[{};()=]/.test(trimmed)) {
+    return false;
+  }
+
+  return true; // Default to assuming it's code
+}
+
+/**
  * Main sanitization function - validates JavaScript code for safety
  * @param code - The JavaScript code to sanitize
  * @returns Sanitization result with validation status and messages
@@ -74,6 +106,12 @@ export function sanitizeCode(code: string): SanitizationResult {
   // Basic validation
   if (!code || code.trim().length === 0) {
     errors.push('Code cannot be empty');
+    return { isValid: false, errors, warnings };
+  }
+
+  // Check if it looks like JavaScript
+  if (!looksLikeJavaScript(code)) {
+    errors.push('Input does not appear to be JavaScript code. Please enter valid JavaScript.');
     return { isValid: false, errors, warnings };
   }
 

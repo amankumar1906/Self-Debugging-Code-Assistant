@@ -145,7 +145,9 @@ export default function DebugResults({ result }: DebugResultsProps) {
           )}
           <div className="flex-1">
             <h3 className="font-semibold text-lg">
-              {result.success ? 'Code Fixed Successfully!' : 'Debugging Failed'}
+              {result.success
+                ? (result.fixedCode ? 'Code Fixed Successfully!' : 'Your Code Works!')
+                : 'Debugging Failed'}
             </h3>
             {result.error && <p className="text-sm mt-1 text-red-700 dark:text-red-300">{result.error}</p>}
           </div>
@@ -168,36 +170,6 @@ export default function DebugResults({ result }: DebugResultsProps) {
         </div>
       )}
 
-      {/* Step-by-Step Logs */}
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
-        <h4 className="font-semibold mb-3">Execution Steps</h4>
-        <div className="space-y-3">
-          {deduplicatedSteps.map((step, index) => (
-            <div key={index} className="flex items-start gap-3">
-              <div className="flex-shrink-0 mt-0.5">{getStatusIcon(step.status)}</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{step.step}</div>
-                {step.message && (
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    {step.message}
-                  </div>
-                )}
-                {step.data && (
-                  <details className="mt-2">
-                    <summary className="text-sm text-blue-600 dark:text-blue-400 cursor-pointer hover:underline">
-                      View details
-                    </summary>
-                    <pre className="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs overflow-x-auto">
-                      {JSON.stringify(step.data, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Fixed Code */}
       {result.fixedCode && (
         <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg p-4">
@@ -217,6 +189,7 @@ export default function DebugResults({ result }: DebugResultsProps) {
           </pre>
         </div>
       )}
+
     </div>
   );
 }
