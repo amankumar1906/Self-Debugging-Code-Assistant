@@ -63,7 +63,7 @@ export interface CodeAnalysisResult {
  */
 export interface FixSuggestionResult {
   is_malicious: boolean;
-  malicious_reason?: string;
+  malicious_reason?: string | null;
   reasoning: string[]; // Chain-of-thought steps
   fixed_code: string;
   changes_made: string[];
