@@ -96,12 +96,12 @@ export async function checkRateLimit(ip: string): Promise<RateLimitResult> {
 export async function checkRateLimitOrThrow(ip: string): Promise<RateLimitResult> {
   const result = await checkRateLimit(ip);
 
-  if (!result.allowed) {
-    throw new RateLimitError(
-      result,
-      `Rate limit exceeded. You can make ${result.limit} requests per hour. Try again in ${Math.ceil(result.resetIn / 60)} minutes.`
-    );
-  }
+  // if (!result.allowed) {
+  //   throw new RateLimitError(
+  //     result,
+  //     `Rate limit exceeded. You can make ${result.limit} requests per hour. Try again in ${Math.ceil(result.resetIn / 60)} minutes.`
+  //   );
+  // }
 
   return result;
 }

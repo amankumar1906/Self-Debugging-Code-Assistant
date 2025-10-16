@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { z } from 'zod';
 
 /**
  * Gemini API client configuration and utility functions
@@ -16,6 +17,32 @@ const MODEL_NAME = 'gemini-2.0-flash-lite';
 function getModel() {
   return genAI.getGenerativeModel({ model: MODEL_NAME });
 }
+
+/**
+ * Zod schema for code analysis result
+ */
+const CodeAnalysisSchema = z.object({
+  is_safe: z.boolean(),
+  safety_issues: z.array(z.string()).optional(),
+  has_bugs: z.boolean(),
+  bug_description: z.string().optional(),
+  bug_location: z.string().optional(),
+  suggested_fix: z.string().optional(),
+  explanation: z.string().optional(),
+  test_case: z.string().optional(),
+});
+
+/**
+ * Zod schema for fix suggestion result
+ */
+const FixSuggestionSchema = z.object({
+  is_malicious: z.boolean(),
+  malicious_reason: z.string().optional().nullable(),
+  reasoning: z.array(z.string()),
+  fixed_code: z.string(),
+  changes_made: z.array(z.string()),
+  confidence: z.enum(['high', 'medium', 'low']),
+});
 
 /**
  * Interface for code analysis result with mandatory safety check
@@ -79,32 +106,37 @@ If the code is safe, analyze it for bugs and logic errors common in JavaScript:
 - Reference errors
 - Runtime errors
 
-Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
+CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no extra text.
+
+REQUIRED JSON SCHEMA (follow EXACTLY):
 {
-  "is_safe": true/false,
-  "safety_issues": ["issue1", "issue2"] (if unsafe, list all issues found),
-  "has_bugs": true/false,
-  "bug_description": "Clear description of the bug" (if has_bugs=true),
-  "bug_location": "Line number or function where bug exists" (if has_bugs=true),
-  "suggested_fix": "Specific fix recommendation" (if has_bugs=true),
-  "explanation": "Why this is a bug and how the fix works" (if has_bugs=true),
-  "test_case": "A simple test case to verify the fix" (optional)
+  "is_safe": boolean (REQUIRED),
+  "safety_issues": string[] (ONLY include if is_safe=false, otherwise OMIT),
+  "has_bugs": boolean (REQUIRED),
+  "bug_description": string (ONLY include if has_bugs=true, otherwise OMIT),
+  "bug_location": string (ONLY include if has_bugs=true, otherwise OMIT),
+  "suggested_fix": string (ONLY include if has_bugs=true, otherwise OMIT),
+  "explanation": string (ONLY include if has_bugs=true, otherwise OMIT),
+  "test_case": string (OPTIONAL - include if helpful, otherwise OMIT)
 }
 
-IMPORTANT: If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bugs=false and only fill safety_issues.`;
+IMPORTANT:
+- If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bugs=false and only fill safety_issues.
+- Do NOT wrap the JSON in markdown code blocks
+- Ensure all strings use double quotes
+- Boolean values must be true or false (not "true" or "false")
+- For optional fields: OMIT them entirely, do NOT set to null or undefined`;
 
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text();
 
-    // Parse JSON response
+    // Parse and clean JSON response
     const cleanedText = text.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    const analysis: CodeAnalysisResult = JSON.parse(cleanedText);
+    const parsed = JSON.parse(cleanedText);
 
-    // Validate required fields
-    if (typeof analysis.is_safe !== 'boolean' || typeof analysis.has_bugs !== 'boolean') {
-      throw new Error('Invalid LLM response: missing required safety/bug flags');
-    }
+    // Validate with Zod schema
+    const analysis = CodeAnalysisSchema.parse(parsed);
 
     return analysis;
   } catch (error) {
@@ -113,6 +145,12 @@ IMPORTANT: If is_safe=false, you MUST NOT proceed with bug analysis. Set has_bug
     // Check if it's a rate limit error from Gemini
     if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
       throw new Error('Heavy server load, please retry in an hour');
+    }
+
+    // Check if it's a Zod validation error
+    if (error instanceof z.ZodError) {
+      console.error('Zod validation error:', JSON.stringify(error.issues));
+      throw new Error('AI returned invalid response. Please try again.');
     }
 
     throw new Error(`Failed to analyze code: ${errorMessage}`);
@@ -153,26 +191,27 @@ SECURITY POLICY:
 ONLY set is_malicious=true if the code is deliberately obfuscated or attempting obvious exploits (base64 payloads, hex shellcode, etc.).
 DO NOT flag code just because it uses require() or process - those will harmlessly fail in the sandbox.
 
-OUTPUT FORMAT:
-Respond ONLY with valid JSON in this exact format (no markdown, no extra text):
+CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no extra text.
+
+REQUIRED JSON SCHEMA (follow EXACTLY):
 {
-  "is_malicious": true/false,
-  "malicious_reason": "Explanation if malicious" (only if is_malicious=true),
-  "reasoning": [
-    "Step 1: What I observed about the code",
-    "Step 2: What the error message tells me",
-    "Step 3: Root cause analysis",
-    "Step 4: My solution approach"
-  ],
-  "fixed_code": "Complete corrected JavaScript code" (empty string if malicious),
-  "changes_made": ["Change 1", "Change 2"] (empty array if malicious),
-  "confidence": "high/medium/low"
+  "is_malicious": boolean,
+  "malicious_reason": string (ONLY include if is_malicious=true, otherwise OMIT this field entirely),
+  "reasoning": string[],
+  "fixed_code": string,
+  "changes_made": string[],
+  "confidence": "high" | "medium" | "low"
 }
 
 IMPORTANT:
 - Always include "reasoning" array with 3-5 step-by-step thoughts explaining your debugging process
 - If is_malicious=true, leave fixed_code as empty string and reasoning as empty array
 - Be conversational in reasoning - explain like teaching a student
+- Do NOT wrap the JSON in markdown code blocks
+- Ensure all strings use double quotes
+- Boolean values must be true or false (not "true" or "false")
+- confidence must be exactly "high", "medium", or "low"
+- For optional fields: OMIT them entirely, do NOT set to null or undefined
 
 ---
 
@@ -201,9 +240,12 @@ KNOWN ISSUE:
     const response = result.response;
     const text = response.text();
 
-    // Parse JSON response
+    // Parse and clean JSON response
     const cleanedText = text.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    const fixSuggestion: FixSuggestionResult = JSON.parse(cleanedText);
+    const parsed = JSON.parse(cleanedText);
+
+    // Validate with Zod schema
+    const fixSuggestion = FixSuggestionSchema.parse(parsed);
 
     return fixSuggestion;
   } catch (error) {
@@ -212,6 +254,12 @@ KNOWN ISSUE:
     // Check if it's a rate limit error from Gemini
     if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('rate limit')) {
       throw new Error('Heavy server load, please retry in an hour');
+    }
+
+    // Check if it's a Zod validation error
+    if (error instanceof z.ZodError) {
+      console.error('Zod validation error:', JSON.stringify(error.issues));
+      throw new Error('AI returned invalid response. Please try again.');
     }
 
     throw new Error(`Failed to generate fix: ${errorMessage}`);
