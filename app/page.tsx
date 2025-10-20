@@ -287,7 +287,7 @@ export default function Home() {
             </a>
             {' • '}
             <a
-              href="https://github.com"
+              href="https://github.com/amankumar1906/Self-Debugging-Code-Assistant"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 dark:text-blue-400 hover:underline"
